@@ -19,6 +19,7 @@ import { MessageEditor } from './message-editor';
 import { DocumentPreview } from './document-preview';
 import { MessageReasoning } from './message-reasoning';
 import type { UseChatHelpers } from '@ai-sdk/react';
+import { DynamicReactRenderer } from './DynamicReactRenderer';
 
 const PurePreviewMessage = ({
   chatId,
@@ -169,6 +170,10 @@ const PurePreviewMessage = ({
                     >
                       {toolName === 'getWeather' ? (
                         <Weather />
+                      ) : toolName === 'renderReact' ? (
+                        <div className="w-full max-w-3xl mx-auto">
+                          <DynamicReactRenderer code={args.code} scope={args.scope} />
+                        </div>
                       ) : toolName === 'createDocument' ? (
                         <DocumentPreview isReadonly={isReadonly} args={args} />
                       ) : toolName === 'updateDocument' ? (
@@ -195,6 +200,10 @@ const PurePreviewMessage = ({
                     <div key={toolCallId}>
                       {toolName === 'getWeather' ? (
                         <Weather weatherAtLocation={result} />
+                      ) : toolName === 'renderReact' ? (
+                        <div className="w-full max-w-3xl mx-auto">
+                          <DynamicReactRenderer code={result.code} scope={result.scope} />
+                        </div>
                       ) : toolName === 'createDocument' ? (
                         <DocumentPreview
                           isReadonly={isReadonly}
