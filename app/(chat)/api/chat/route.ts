@@ -43,9 +43,12 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 
 // Assuming a type for what we expect from mcpTool.inputSchema.properties items
 interface McpJsonSchemaProperty { 
-  type?: string | string[];
+  type?: string | string[]; // Can be a string (e.g., "string") or array (for union types like ["string", "null"])
   description?: string;
+  items?: McpJsonSchemaProperty; // For type: 'array', describes the items in the array
+  enum?: string[];             // For type: 'string' or array items with an enum constraint
   // other JSON schema fields might be here
+  [key: string]: any; // Allow other properties for flexibility with varied JSON schemas
 }
 
 // Assuming a type for what we expect from mcpTool.inputSchema
@@ -54,6 +57,7 @@ interface McpJsonSchema {
   properties?: Record<string, McpJsonSchemaProperty>;
   required?: string[];
   // other JSON schema fields
+  [key: string]: any; // Allow other properties
 }
 
 // Assuming a type for mcpTool from SDK (partial, based on usage)
@@ -61,6 +65,7 @@ interface McpTool {
   name: string;
   description?: string;
   inputSchema?: McpJsonSchema; 
+  [key: string]: any; // Allow other properties
 }
 
 // Type for content items from MCP tool call result
@@ -148,8 +153,29 @@ async function loadToolsViaMcpSdk(url: string): Promise<Record<string, DynamicTo
             
             let zodType: z.ZodTypeAny;
 
-            // Simplified type mapping
-            if (propSchema.type === 'number' || propSchema.type === 'integer') {
+            // Enhanced type mapping for arrays and enums
+            if (propSchema.type === 'array') {
+              let itemType: z.ZodTypeAny = z.any(); // Default for array items if not specified
+              if (propSchema.items) {
+                if (propSchema.items.type === 'string' && propSchema.items.enum && propSchema.items.enum.length > 0) {
+                  // Zod enums need at least one value.
+                  const enumValues = propSchema.items.enum as [string, ...string[]];
+                  itemType = z.enum(enumValues);
+                } else if (propSchema.items.type === 'string') {
+                  itemType = z.string();
+                } else if (propSchema.items.type === 'number' || propSchema.items.type === 'integer') {
+                  itemType = z.number();
+                } else if (propSchema.items.type === 'boolean') {
+                  itemType = z.boolean();
+                }
+                // Add other primitive item types as needed
+              }
+              zodType = z.array(itemType);
+            } else if (propSchema.type === 'string' && propSchema.enum && propSchema.enum.length > 0) {
+               // Zod enums need at least one value.
+              const enumValues = propSchema.enum as [string, ...string[]];
+              zodType = z.enum(enumValues);
+            } else if (propSchema.type === 'number' || propSchema.type === 'integer') {
               zodType = z.number();
             } else if (propSchema.type === 'boolean') {
               zodType = z.boolean();
@@ -326,18 +352,120 @@ export async function POST(request: Request) {
                 }) as McpCallToolResult; // Cast to our defined interface
                 console.log(`Result from MCP tool ${def.mcpToolName}:`, toolCallResult);
 
-                let resultForAi = "Tool executed successfully.";
+                let resultForAi = "Tool executed successfully."; // Default message
+                let meaningfulDataProcessed = false;
+
                 if (toolCallResult.content && toolCallResult.content.length > 0) {
-                  const firstContentItem = toolCallResult.content[0];
-                  if (firstContentItem.type === 'text' && typeof firstContentItem.text === 'string') {
-                     resultForAi = firstContentItem.text;
-                  } else {
-                    resultForAi = JSON.stringify(firstContentItem);
+                  for (const item of toolCallResult.content) {
+                    if (item.type === 'text' && item.text) {
+                      const jsonPrefix = " succeeded. Response:\n{"; // Marker for our JSON payload
+                      const jsonStartIndex = item.text.indexOf(jsonPrefix);
+
+                      if (jsonStartIndex !== -1) {
+                        const jsonString = item.text.substring(jsonStartIndex + " succeeded. Response:\n".length);
+                        try {
+                          const jsonData = JSON.parse(jsonString);
+                          meaningfulDataProcessed = true;
+
+                          const props: Record<string, any> = {};
+                          let componentName: string | null = null;
+
+                          if (jsonData.error && (jsonData.error.message?.includes('Insufficient client scope') || jsonData.error.status === 403)) {
+                            resultForAi = `The Spotify API reported an error: ${jsonData.error.message}. This often means the provided OAuth token does not have sufficient permissions (scopes) for this specific action.`;
+                            componentName = null; // No component for a scope error
+                          } else if (def.mcpToolName === 'get_a_list_of_current_users_playlists' && jsonData.items && Array.isArray(jsonData.items) && jsonData.items.length > 0) {
+                            // Handling for a list of playlists (e.g., from get_a_list_of_current_users_playlists)
+                            const firstPlaylist = jsonData.items[0];
+                            componentName = 'SpotifyItemCard';
+                            props.itemType = 'playlist';
+                            props.name = firstPlaylist.name;
+                            props.description = firstPlaylist.description || null;
+                            props.trackCount = firstPlaylist.tracks?.total;
+                            props.spotifyUrl = firstPlaylist.external_urls?.spotify;
+                            props.imageUrl = firstPlaylist.images?.[0]?.url;
+                          } else if (jsonData.type === 'track' || def.mcpToolName === 'get_track' || def.mcpToolName === 'get_an_artists_top_tracks' || (def.mcpToolName === 'search' && jsonData.tracks?.items?.[0]?.type === 'track')) {
+                            // Handling for a single track (e.g., from get_track, search, or artist's top tracks)
+                            const trackData = (def.mcpToolName === 'search' && jsonData.tracks?.items?.[0]) ? jsonData.tracks.items[0] : jsonData;
+                            componentName = 'SpotifyItemCard';
+                            props.itemType = 'track';
+                            props.name = trackData.name;
+                            props.artist = trackData.artists?.[0]?.name;
+                            props.album = trackData.album?.name;
+                            props.spotifyUrl = trackData.external_urls?.spotify;
+                            props.imageUrl = trackData.album?.images?.[0]?.url || trackData.images?.[0]?.url; // Prefer album image for tracks
+                          } else if (jsonData.type === 'album' || def.mcpToolName === 'get_an_album' || (def.mcpToolName === 'search' && jsonData.albums?.items?.[0]?.type === 'album')) {
+                            // Handling for a single album (e.g., from get_an_album or search)
+                            const albumData = (def.mcpToolName === 'search' && jsonData.albums?.items?.[0]) ? jsonData.albums.items[0] : jsonData;
+                            componentName = 'SpotifyItemCard';
+                            props.itemType = 'album';
+                            props.name = albumData.name;
+                            props.artist = albumData.artists?.[0]?.name;
+                            props.spotifyUrl = albumData.external_urls?.spotify;
+                            props.imageUrl = albumData.images?.[0]?.url;
+                            props.trackCount = albumData.total_tracks ?? albumData.tracks?.total;
+                          } else if (jsonData.type === 'playlist' || def.mcpToolName === 'get_playlist' || (def.mcpToolName === 'search' && jsonData.playlists?.items?.[0]?.type === 'playlist')) {
+                            // Handling for a single playlist (e.g., from get_playlist or search)
+                            const playlistData = (def.mcpToolName === 'search' && jsonData.playlists?.items?.[0]) ? jsonData.playlists.items[0] : jsonData;
+                            componentName = 'SpotifyItemCard';
+                            props.itemType = 'playlist';
+                            props.name = playlistData.name;
+                            props.description = playlistData.description || null;
+                            props.spotifyUrl = playlistData.external_urls?.spotify;
+                            props.imageUrl = playlistData.images?.[0]?.url;
+                            props.trackCount = playlistData.tracks?.total;
+                          } else if (jsonData.error) {
+                            resultForAi = `Spotify API returned an error: ${jsonData.error.message || JSON.stringify(jsonData.error)}`;
+                            componentName = null; // No component for an error
+                          }
+                          // Add more specific handlers for other mcpToolName values as needed
+                          
+                          if (componentName) {
+                            // Clean up props: remove null/undefined values
+                            Object.keys(props).forEach(key => (props[key] === undefined || props[key] === null) && delete props[key]);
+                            resultForAi = `The tool call was successful. Use the renderReact tool to display a '${componentName}' with the following props: ${JSON.stringify(props)}.`;
+                          } else if (!resultForAi.startsWith("Spotify API returned an error:")) {
+                            // Generic fallback if specific parsing fails but JSON is valid and not an error
+                            resultForAi = "Successfully fetched data from Spotify. The data is structured but not specifically formatted for a card display in this case.";
+                          }
+                          break; 
+                        } catch (e) {
+                          console.warn("Failed to parse JSON from tool result item:", item.text, e);
+                          if (!meaningfulDataProcessed) {
+                            resultForAi = "Received a response that included data, but it couldn't be fully parsed. The raw text started with: " + item.text.substring(0, 100) + "...";
+                          }
+                        }
+                      } else if (!meaningfulDataProcessed) {
+                        resultForAi = item.text;
+                      }
+                    } else if (!meaningfulDataProcessed && item) {
+                       resultForAi = "Received non-text or empty content from tool.";
+                       console.log("Non-text or empty content item:", item);
+                    }
                   }
                 } else if (toolCallResult.isError) {
                   resultForAi = `Tool execution failed: ${JSON.stringify(toolCallResult.error || 'Unknown error')}`;
+                  if (typeof toolCallResult.error === 'string' && (toolCallResult.error.includes('Insufficient client scope') || toolCallResult.error.includes('403'))) {
+                     resultForAi = `The Spotify API reported an error, likely due to insufficient OAuth token permissions (scopes) for this action. Details: ${toolCallResult.error}`;
+                  } else if (toolCallResult.error && typeof toolCallResult.error === 'object' && 'message' in toolCallResult.error) {
+                    const errorMessage = (toolCallResult.error as any).message as string;
+                    if (errorMessage.includes('Insufficient client scope') || errorMessage.includes('403')){
+                        resultForAi = `The Spotify API reported an error: ${errorMessage}. This often means the provided OAuth token does not have sufficient permissions (scopes) for this specific action.`;
+                    } else {
+                        resultForAi = `Tool execution failed: ${errorMessage}`;
+                    }
+                  }
+                  meaningfulDataProcessed = true; 
                 }
-
+                
+                if (!meaningfulDataProcessed && toolCallResult.content && toolCallResult.content.length > 0 && resultForAi === "Tool executed successfully.") {
+                    const firstItem = toolCallResult.content[0];
+                    if (firstItem && firstItem.type === 'text' && firstItem.text) {
+                        resultForAi = firstItem.text;
+                    } else if (firstItem) {
+                        resultForAi = "Tool returned structured data that was not specifically parsed.";
+                    }
+                }
+                
                 dataStream.writeData({ type: 'tool-result', toolName: opId, result: resultForAi });
                 return resultForAi;
 
