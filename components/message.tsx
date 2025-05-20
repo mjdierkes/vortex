@@ -165,7 +165,7 @@ const PurePreviewMessage = ({
                     <div
                       key={toolCallId}
                       className={cx({
-                        skeleton: ['getWeather'].includes(toolName),
+                        skeleton: ['getWeather', 'renderReact'].includes(toolName),
                       })}
                     >
                       {toolName === 'getWeather' ? (

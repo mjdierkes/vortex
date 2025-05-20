@@ -10,6 +10,19 @@ interface DynamicReactRendererProps {
   onError?: (error: Error) => void;
 }
 
+function DynamicReactSkeleton() {
+  return (
+    <div className="animate-pulse space-y-4">
+      <div className="h-8 bg-gray-200 rounded w-3/4"></div>
+      <div className="space-y-2">
+        <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+        <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+      </div>
+      <div className="h-10 bg-gray-200 rounded w-1/4"></div>
+    </div>
+  );
+}
+
 export function DynamicReactRenderer({
   code,
   scope = {},
@@ -17,8 +30,10 @@ export function DynamicReactRenderer({
 }: DynamicReactRendererProps) {
   const [Component, setComponent] = useState<React.ComponentType | null>(null);
   const [error, setError] = useState<Error | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    setIsLoading(true);
     try {
       // Remove export statements before transformation
       const codeWithoutExports = code.replace(/export\s+(default\s+)?/g, '');
@@ -55,6 +70,8 @@ export function DynamicReactRenderer({
       const error = err instanceof Error ? err : new Error('Failed to render component');
       setError(error);
       onError(error);
+    } finally {
+      setIsLoading(false);
     }
   }, [code, scope, onError]);
 
@@ -67,8 +84,8 @@ export function DynamicReactRenderer({
     );
   }
 
-  if (!Component) {
-    return null;
+  if (isLoading || !Component) {
+    return <DynamicReactSkeleton />;
   }
 
   try {
