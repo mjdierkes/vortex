@@ -20,8 +20,11 @@ export function DynamicReactRenderer({
 
   useEffect(() => {
     try {
+      // Remove export statements before transformation
+      const codeWithoutExports = code.replace(/export\s+(default\s+)?/g, '');
+      
       // Transform JSX to JavaScript
-      const transformedCode = transform(code, {
+      const transformedCode = transform(codeWithoutExports, {
         presets: ['react'],
       }).code;
 
