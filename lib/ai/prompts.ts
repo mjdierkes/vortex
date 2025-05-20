@@ -43,7 +43,7 @@ export interface RequestHints {
 }
 
 export const getRequestPromptFromHints = (requestHints: RequestHints) => `\
-About the origin of user's request:
+About the origin of user\'s request:
 - lat: ${requestHints.latitude}
 - lon: ${requestHints.longitude}
 - city: ${requestHints.city}
@@ -62,7 +62,8 @@ export const systemPrompt = ({
   if (selectedChatModel === 'chat-model-reasoning') {
     return `${regularPrompt}\n\n${requestPrompt}`;
   } else {
-    return `${regularPrompt}\n\n${requestPrompt}\n\n${artifactsPrompt}`;
+    const dynamicToolsNote = "Note: If a user provides an MCP Server URL, additional tools may be dynamically loaded from that server. These tools will be available for use alongside the standard tools.";
+    return `${regularPrompt}\n\n${requestPrompt}\n\n${artifactsPrompt}\n\n${dynamicToolsNote}`;
   }
 };
 
@@ -75,10 +76,10 @@ You are a Python code generator that creates self-contained, executable code sni
 4. Keep snippets concise (generally under 15 lines)
 5. Avoid external dependencies - use Python standard library
 6. Handle potential errors gracefully
-7. Return meaningful output that demonstrates the code's functionality
-8. Don't use input() or other interactive functions
-9. Don't access files or network resources
-10. Don't use infinite loops
+7. Return meaningful output that demonstrates the code\'s functionality
+8. Don\'t use input() or other interactive functions
+9. Don\'t access files or network resources
+10. Don\'t use infinite loops
 
 Examples of good snippets:
 

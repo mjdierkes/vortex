@@ -21,6 +21,17 @@ import { useChatVisibility } from '@/hooks/use-chat-visibility';
 import { useAutoResume } from '@/hooks/use-auto-resume';
 import { ChatSDKError } from '@/lib/errors';
 
+// Helper function (can be moved to utils if used elsewhere)
+function isUrlValid(urlString: string): boolean {
+  if (!urlString) return false;
+  try {
+    new URL(urlString);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 export function Chat({
   id,
   initialMessages,
@@ -39,6 +50,7 @@ export function Chat({
   autoResume: boolean;
 }) {
   const { mutate } = useSWRConfig();
+  const [mcpServerUrlInput, setMcpServerUrlInput] = useState(''); // State for MCP Server URL
 
   const { visibilityType } = useChatVisibility({
     chatId: id,
@@ -69,6 +81,7 @@ export function Chat({
       message: body.messages.at(-1),
       selectedChatModel: initialChatModel,
       selectedVisibilityType: visibilityType,
+      ...(mcpServerUrlInput && isUrlValid(mcpServerUrlInput) ? { mcpServerUrl: mcpServerUrlInput } : {})
     }),
     onFinish: () => {
       mutate(unstable_serialize(getChatHistoryPaginationKey));
@@ -138,22 +151,37 @@ export function Chat({
           isArtifactVisible={isArtifactVisible}
         />
 
-        <form className="flex mx-auto px-4 bg-background pb-4 md:pb-6 gap-2 w-full md:max-w-3xl">
+        <form className="flex flex-col mx-auto px-4 bg-background pb-4 md:pb-6 gap-2 w-full md:max-w-3xl">
           {!isReadonly && (
-            <MultimodalInput
-              chatId={id}
-              input={input}
-              setInput={setInput}
-              handleSubmit={handleSubmit}
-              status={status}
-              stop={stop}
-              attachments={attachments}
-              setAttachments={setAttachments}
-              messages={messages}
-              setMessages={setMessages}
-              append={append}
-              selectedVisibilityType={visibilityType}
-            />
+            <>
+              <div className="flex flex-col gap-1 mb-2">
+                <label htmlFor="mcp-server-url" className="text-xs text-zinc-500">
+                  MCP Server URL (Optional)
+                </label>
+                <input
+                  type="text"
+                  id="mcp-server-url"
+                  value={mcpServerUrlInput}
+                  onChange={(e) => setMcpServerUrlInput(e.target.value)}
+                  placeholder="https://your-mcp-server.com/api/mcp-def"
+                  className="w-full p-2 border border-zinc-300 rounded-md text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 dark:bg-zinc-700 dark:border-zinc-600 dark:text-white"
+                />
+              </div>
+              <MultimodalInput
+                chatId={id}
+                input={input}
+                setInput={setInput}
+                handleSubmit={handleSubmit}
+                status={status}
+                stop={stop}
+                attachments={attachments}
+                setAttachments={setAttachments}
+                messages={messages}
+                setMessages={setMessages}
+                append={append}
+                selectedVisibilityType={visibilityType}
+              />
+            </>
           )}
         </form>
       </div>

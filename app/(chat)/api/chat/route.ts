@@ -37,6 +37,46 @@ import { after } from 'next/server';
 import type { Chat } from '@/lib/db/schema';
 import { differenceInSeconds } from 'date-fns';
 import { ChatSDKError } from '@/lib/errors';
+import { z } from 'zod';
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+
+// Assuming a type for what we expect from mcpTool.inputSchema.properties items
+interface McpJsonSchemaProperty { 
+  type?: string | string[];
+  description?: string;
+  // other JSON schema fields might be here
+}
+
+// Assuming a type for what we expect from mcpTool.inputSchema
+interface McpJsonSchema { 
+  type?: string;
+  properties?: Record<string, McpJsonSchemaProperty>;
+  required?: string[];
+  // other JSON schema fields
+}
+
+// Assuming a type for mcpTool from SDK (partial, based on usage)
+interface McpTool {
+  name: string;
+  description?: string;
+  inputSchema?: McpJsonSchema; 
+}
+
+// Type for content items from MCP tool call result
+interface McpToolResultContentItem {
+  type: string;
+  text?: string;
+  // Other potential fields depending on content type
+  [key: string]: any; 
+}
+
+// Type for the result of mcpClient.callTool
+interface McpCallToolResult {
+  content?: McpToolResultContentItem[];
+  isError?: boolean;
+  error?: any; // Or a more specific error type if known
+}
 
 export const maxDuration = 60;
 
@@ -62,6 +102,109 @@ function getStreamContext() {
   return globalStreamContext;
 }
 
+interface DynamicToolDefinition {
+  operationId: string;
+  description: string;
+  parametersSchema: z.ZodObject<any, any, any>;
+  mcpServerUrl: string;
+  mcpToolName: string;
+}
+
+async function loadToolsViaMcpSdk(url: string): Promise<Record<string, DynamicToolDefinition>> {
+  const definitions: Record<string, DynamicToolDefinition> = {};
+  let mcpClient: Client | null = null;
+  let transport: StreamableHTTPClientTransport | null = null;
+
+  console.log(`Attempting to load tools from MCP server: ${url}`);
+
+  try {
+    const serverUrl = new URL(url);
+
+    mcpClient = new Client({
+      name: "vortex-chat-client",
+      version: "1.0.0",
+    });
+
+    transport = new StreamableHTTPClientTransport(serverUrl);
+    console.log("MCP Transport created. Attempting to connect...");
+    await mcpClient.connect(transport);
+    console.log(`Successfully connected to MCP server: ${url}`);
+
+    const toolsResult = await mcpClient.listTools(); // Assuming listTools returns { tools: McpTool[] }
+    console.log("Tools listed from MCP server:", JSON.stringify(toolsResult, null, 2));
+
+    if (toolsResult.tools && toolsResult.tools.length > 0) {
+      for (const mcpTool of toolsResult.tools as McpTool[]) { // Cast to our McpTool interface
+        const operationId = mcpTool.name;
+        const description = mcpTool.description || 'No description provided by MCP server.';
+
+        let paramShape: Record<string, z.ZodTypeAny> = {};
+        const inputSchema = mcpTool.inputSchema;
+
+        if (inputSchema && inputSchema.type === 'object' && inputSchema.properties) {
+          for (const propName in inputSchema.properties) {
+            const propSchema: McpJsonSchemaProperty = inputSchema.properties[propName];
+            const isRequired = inputSchema.required?.includes(propName) ?? false;
+            
+            let zodType: z.ZodTypeAny;
+
+            // Simplified type mapping
+            if (propSchema.type === 'number' || propSchema.type === 'integer') {
+              zodType = z.number();
+            } else if (propSchema.type === 'boolean') {
+              zodType = z.boolean();
+            } else { // Default to string for other types or if type is not specified
+              zodType = z.string();
+            }
+
+            if (!isRequired) {
+              zodType = zodType.optional();
+            }
+            
+            paramShape[propName] = zodType.describe(propSchema.description || '');
+          }
+        }
+        const parametersSchema = z.object(paramShape);
+
+        definitions[operationId] = {
+          operationId,
+          description,
+          parametersSchema,
+          mcpServerUrl: url,
+          mcpToolName: mcpTool.name,
+        };
+      }
+      console.log(`Successfully processed ${Object.keys(definitions).length} tools from ${url}`);
+    } else {
+      console.log(`No tools found on MCP server ${url} or tools array is empty.`);
+    }
+  } catch (error: any) {
+    console.error(`Error in loadToolsViaMcpSdk for ${url}: ${error.message}`);
+    if (error.stack) {
+      console.error("Stack trace:", error.stack);
+    }
+    // Log additional error details if available (e.g., from a fetch-like response)
+    if (error.response && typeof error.response.text === 'function') {
+      try {
+        const errorBody = await error.response.text();
+        console.error(`Error response body from MCP connection attempt: ${errorBody}`);
+      } catch (e) { /* ignore if body can't be read */ }
+    }
+  } finally {
+    // No isConnected check, rely on close() to handle state or throw if called inappropriately.
+    if (mcpClient) { 
+      try {
+        console.log("Closing MCP client connection in loadToolsViaMcpSdk...");
+        await mcpClient.close();
+        console.log("MCP client connection closed in loadToolsViaMcpSdk.");
+      } catch (e: any) {
+        console.error("Error closing mcpClient in loadToolsViaMcpSdk:", e.message);
+      }
+    }
+  }
+  return definitions;
+}
+
 export async function POST(request: Request) {
   let requestBody: PostRequestBody;
 
@@ -73,7 +216,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { id, message, selectedChatModel, selectedVisibilityType } =
+    const { id, message, selectedChatModel, selectedVisibilityType, mcpServerUrl } =
       requestBody;
 
     const session = await auth();
@@ -142,18 +285,84 @@ export async function POST(request: Request) {
       ],
     });
 
+    let toolDefinitions: Record<string, DynamicToolDefinition> = {};
+    if (mcpServerUrl) {
+      try {
+        toolDefinitions = await loadToolsViaMcpSdk(mcpServerUrl);
+        console.log(`Dynamic tool definitions loaded from ${mcpServerUrl}:`, Object.keys(toolDefinitions));
+      } catch (e) {
+        console.error("Failed to load tool definitions from MCP server URL during POST:", e);
+      }
+    }
+
     const streamId = generateUUID();
     await createStreamId({ streamId, chatId: id });
 
     const stream = createDataStream({
       execute: (dataStream) => {
+        const dynamicTools: Record<string, any> = {};
+        for (const opId in toolDefinitions) {
+          const def = toolDefinitions[opId];
+          dynamicTools[opId] = {
+            description: def.description,
+            parameters: def.parametersSchema,
+            execute: async (args: any) => {
+              let toolMcpClient: Client | null = null;
+              let toolTransport: StreamableHTTPClientTransport | null = null;
+              try {
+                console.log(`Executing dynamic MCP tool: ${def.mcpToolName} from ${def.mcpServerUrl} with args:`, args);
+                const serverUrl = new URL(def.mcpServerUrl);
+                toolMcpClient = new Client({
+                  name: "vortex-chat-tool-executor",
+                  version: "1.0.0"
+                });
+                toolTransport = new StreamableHTTPClientTransport(serverUrl);
+                await toolMcpClient.connect(toolTransport);
+                console.log(`Connected to MCP server for tool execution: ${def.mcpToolName}`);
+
+                const toolCallResult = await toolMcpClient.callTool({
+                  name: def.mcpToolName,
+                  arguments: args,
+                }) as McpCallToolResult; // Cast to our defined interface
+                console.log(`Result from MCP tool ${def.mcpToolName}:`, toolCallResult);
+
+                let resultForAi = "Tool executed successfully.";
+                if (toolCallResult.content && toolCallResult.content.length > 0) {
+                  const firstContentItem = toolCallResult.content[0];
+                  if (firstContentItem.type === 'text' && typeof firstContentItem.text === 'string') {
+                     resultForAi = firstContentItem.text;
+                  } else {
+                    resultForAi = JSON.stringify(firstContentItem);
+                  }
+                } else if (toolCallResult.isError) {
+                  resultForAi = `Tool execution failed: ${JSON.stringify(toolCallResult.error || 'Unknown error')}`;
+                }
+
+                dataStream.writeData({ type: 'tool-result', toolName: opId, result: resultForAi });
+                return resultForAi;
+
+              } catch (execError: any) {
+                console.error(`Error executing MCP tool ${def.mcpToolName}:`, execError.message, execError.stack);
+                dataStream.writeData({ type: 'error', content: `Tool ${opId} execution error: ${execError.message}` });
+                return { error: `Error executing tool ${opId}: ${execError.message}` };
+              } finally {
+                // No isConnected check here either
+                if (toolMcpClient) { 
+                  console.log("Closing MCP client after tool execution...");
+                  await toolMcpClient.close().catch(e => console.error("Error closing MCP client post-tool-execution:", e));
+                  console.log("MCP client closed post-tool-execution.");
+                }
+              }
+            }
+          };
+        }
+
         const result = streamText({
           model: myProvider.languageModel(selectedChatModel),
           system: systemPrompt({ selectedChatModel, requestHints }),
           messages,
           maxSteps: 5,
-          experimental_activeTools:
-            selectedChatModel === 'chat-model-reasoning'
+          experimental_activeTools: selectedChatModel === 'chat-model-reasoning'
               ? []
               : [
                   'getWeather',
@@ -161,7 +370,8 @@ export async function POST(request: Request) {
                   'updateDocument',
                   'requestSuggestions',
                   'renderReact',
-                ],
+                  ...(Object.keys(dynamicTools) as string[]),
+                ] as any,
           experimental_transform: smoothStream({ chunking: 'word' }),
           experimental_generateMessageId: generateUUID,
           tools: {
@@ -173,6 +383,7 @@ export async function POST(request: Request) {
               dataStream,
             }),
             renderReact,
+            ...dynamicTools,
           },
           onFinish: async ({ response }) => {
             if (session.user?.id) {
@@ -188,7 +399,7 @@ export async function POST(request: Request) {
                 }
 
                 const [, assistantMessage] = appendResponseMessages({
-                  messages: [message],
+                  messages: [message], // The original user message
                   responseMessages: response.messages,
                 });
 
@@ -240,6 +451,8 @@ export async function POST(request: Request) {
     if (error instanceof ChatSDKError) {
       return error.toResponse();
     }
+    console.error('[CHAT_API_POST_ERROR]', error);
+    return new Response('Internal Server Error', { status: 500 });
   }
 }
 
