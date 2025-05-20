@@ -8,6 +8,22 @@ const components: Partial<Components> = {
   // @ts-expect-error
   code: CodeBlock,
   pre: ({ children }) => <>{children}</>,
+  // Handle paragraphs that might contain code blocks
+  p: ({ node, children, ...props }) => {
+    // Check if any of the children are pre/code blocks that can't be inside paragraphs
+    const hasCodeBlock = React.Children.toArray(children).some(
+      (child) => 
+        React.isValidElement(child) && 
+        (child.type === 'pre' || (child.props && child.props.node && child.props.node.tagName === 'pre'))
+    );
+
+    // If there's a code block, don't wrap in a paragraph
+    if (hasCodeBlock) {
+      return <>{children}</>;
+    }
+
+    return <p {...props}>{children}</p>;
+  },
   ol: ({ node, children, ...props }) => {
     return (
       <ol className="list-decimal list-outside ml-4" {...props}>

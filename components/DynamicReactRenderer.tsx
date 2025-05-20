@@ -49,15 +49,16 @@ export function DynamicReactRenderer({
       setComponent(() => DynamicComponent);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err : new Error('Failed to render component'));
-      onError(err instanceof Error ? err : new Error('Failed to render component'));
+      const error = err instanceof Error ? err : new Error('Failed to render component');
+      setError(error);
+      onError(error);
     }
   }, [code, scope, onError]);
 
   if (error) {
     return (
       <div className="p-4 border border-red-500 rounded bg-red-50 text-red-700">
-        <p className="font-bold">Error rendering component:</p>
+        <p className="font-bold">Error:</p>
         <pre className="mt-2 text-sm whitespace-pre-wrap">{error.message}</pre>
       </div>
     );
