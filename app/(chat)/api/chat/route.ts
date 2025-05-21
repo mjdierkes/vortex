@@ -23,7 +23,7 @@ import { createDocument } from '@/lib/ai/tools/create-document';
 import { updateDocument } from '@/lib/ai/tools/update-document';
 import { requestSuggestions } from '@/lib/ai/tools/request-suggestions';
 import { getWeather } from '@/lib/ai/tools/get-weather';
-import { renderReact } from '@/lib/ai/tools/render-react';
+// import { renderReact } from '@/lib/ai/tools/render-react';
 import { isProductionEnvironment } from '@/lib/constants';
 import { myProvider } from '@/lib/ai/providers';
 import { entitlementsByUserType } from '@/lib/ai/entitlements';
@@ -376,9 +376,9 @@ export async function POST(request: Request) {
                             if (jsonDataStringForAi.length > maxJsonLengthForPrompt) {
                               // If JSON is too large, provide a summary/keys and instruct AI
                               const keys = Object.keys(jsonData);
-                              resultForAi = `The tool call was successful and returned a large JSON data object with the following top-level keys: ${keys.join(', ')}. Analyze this structure and use the renderReact tool if appropriate to display relevant information. You may need to request specific parts of the data if the summary is insufficient.`;
+                              resultForAi = `The tool call was successful and returned a large JSON data object with the following top-level keys: ${keys.join(', ')}. You may need to request specific parts of the data if the summary is insufficient.`;
                             } else {
-                              resultForAi = `The tool call was successful and returned the following JSON data. Analyze this data and use the renderReact tool if appropriate to display it: ${jsonDataStringForAi}`;
+                              resultForAi = `The tool call was successful and returned the following JSON data. Analyze this data to display it: ${jsonDataStringForAi}`;
                             }
                           }
                           break; // Processed the first valid JSON found
@@ -449,7 +449,6 @@ export async function POST(request: Request) {
                   'createDocument',
                   'updateDocument',
                   'requestSuggestions',
-                  'renderReact',
                   ...(Object.keys(dynamicTools) as string[]),
                 ] as any,
           experimental_transform: smoothStream({ chunking: 'word' }),
@@ -462,7 +461,6 @@ export async function POST(request: Request) {
               session,
               dataStream,
             }),
-            renderReact,
             ...dynamicTools,
           },
           onFinish: async ({ response }) => {

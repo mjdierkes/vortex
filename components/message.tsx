@@ -165,15 +165,11 @@ const PurePreviewMessage = ({
                     <div
                       key={toolCallId}
                       className={cx({
-                        skeleton: ['getWeather', 'renderReact'].includes(toolName),
+                        skeleton: ['getWeather'].includes(toolName),
                       })}
                     >
                       {toolName === 'getWeather' ? (
                         <Weather />
-                      ) : toolName === 'renderReact' ? (
-                        <div className="w-full max-w-3xl mx-auto">
-                          <DynamicReactRenderer code={args.code} scope={args.scope} />
-                        </div>
                       ) : toolName === 'createDocument' ? (
                         <DocumentPreview isReadonly={isReadonly} args={args} />
                       ) : toolName === 'updateDocument' ? (
@@ -200,10 +196,6 @@ const PurePreviewMessage = ({
                     <div key={toolCallId}>
                       {toolName === 'getWeather' ? (
                         <Weather weatherAtLocation={result} />
-                      ) : toolName === 'renderReact' ? (
-                        <div className="w-full max-w-3xl mx-auto">
-                          <DynamicReactRenderer code={result.code} scope={result.scope} />
-                        </div>
                       ) : toolName === 'createDocument' ? (
                         <DocumentPreview
                           isReadonly={isReadonly}

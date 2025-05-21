@@ -7,6 +7,7 @@ import {
   PlayIcon,
   RedoIcon,
   UndoIcon,
+  EyeIcon,
 } from '@/components/icons';
 import { toast } from 'sonner';
 import { generateUUID } from '@/lib/utils';
@@ -64,15 +65,17 @@ function detectRequiredHandlers(code: string): string[] {
 
 interface Metadata {
   outputs: Array<ConsoleOutput>;
+  htmlPreview?: string | null;
 }
 
 export const codeArtifact = new Artifact<'code', Metadata>({
   kind: 'code',
   description:
-    'Useful for code generation; Code execution is only available for python code.',
+    'Useful for code generation and execution. Supports HTML, JS, CSS, and React (via CDN) for live web previews.',
   initialize: async ({ setMetadata }) => {
     setMetadata({
       outputs: [],
+      htmlPreview: null,
     });
   },
   onStreamPart: ({ streamPart, setArtifact }) => {
@@ -97,7 +100,7 @@ export const codeArtifact = new Artifact<'code', Metadata>({
           <CodeEditor {...props} />
         </div>
 
-        {metadata?.outputs && (
+        {metadata?.outputs && metadata.outputs.length > 0 && (
           <Console
             consoleOutputs={metadata.outputs}
             setConsoleOutputs={() => {
@@ -107,6 +110,30 @@ export const codeArtifact = new Artifact<'code', Metadata>({
               });
             }}
           />
+        )}
+
+        {metadata?.htmlPreview && (
+          <div className="mt-4 p-2 border rounded">
+            <div className="flex justify-between items-center mb-2">
+              <h3 className="text-lg font-semibold">Web Preview</h3>
+              <button
+                onClick={() => setMetadata({ ...metadata, htmlPreview: null })}
+                className="px-2 py-1 text-sm bg-gray-200 hover:bg-gray-300 rounded"
+              >
+                Close Preview
+              </button>
+            </div>
+            <iframe
+              srcDoc={metadata.htmlPreview}
+              title="Web Preview"
+              sandbox="allow-scripts allow-popups allow-forms allow-modals allow-same-origin"
+              style={{
+                width: '100%',
+                height: '400px',
+                border: '1px solid #ccc',
+              }}
+            />
+          </div>
         )}
       </>
     );
@@ -206,6 +233,19 @@ export const codeArtifact = new Artifact<'code', Metadata>({
             ],
           }));
         }
+      },
+    },
+    {
+      icon: <EyeIcon size={18} />,
+      label: 'Render Web',
+      description: 'Render HTML/JS/React code in a preview pane',
+      onClick: async ({ content, metadata, setMetadata }) => {
+        setMetadata({
+          ...metadata,
+          htmlPreview: content,
+          outputs: [],
+        });
+        toast.success('Web preview updated. Ensure your code includes necessary HTML structure.');
       },
     },
     {
