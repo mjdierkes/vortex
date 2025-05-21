@@ -11,7 +11,7 @@ export const imageArtifact = new Artifact({
       setArtifact((draftArtifact) => ({
         ...draftArtifact,
         content: streamPart.content as string,
-        isVisible: true,
+        // isVisible: true,
         status: 'streaming',
       }));
     }
