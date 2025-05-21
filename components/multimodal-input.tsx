@@ -201,111 +201,103 @@ function PureMultimodalInput({
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 10 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-            className="absolute left-1/2 bottom-28 -translate-x-1/2 z-50"
+            className="absolute bottom-full left-1/2 -translate-x-1/2 mb-4"
           >
             <Button
-              data-testid="scroll-to-bottom-button"
-              className="rounded-full"
-              size="icon"
               variant="outline"
-              onClick={(event) => {
-                event.preventDefault();
+              size="icon"
+              className="h-8 w-8 rounded-full bg-background"
+              onClick={(e) => {
+                e.preventDefault();
                 scrollToBottom();
               }}
             >
-              <ArrowDown />
+              <ArrowDown className="h-4 w-4" />
             </Button>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {messages.length === 0 &&
-        attachments.length === 0 &&
-        uploadQueue.length === 0 && (
-          <SuggestedActions
-            append={append}
-            chatId={chatId}
-            selectedVisibilityType={selectedVisibilityType}
-          />
+      <div className="flex flex-col gap-4 w-full max-w-2xl mx-auto">
+        {attachments.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {attachments.map((attachment) => (
+              <PreviewAttachment
+                key={attachment.name}
+                attachment={attachment}
+                isUploading={false}
+              />
+            ))}
+          </div>
         )}
+
+        <div className="flex items-end gap-2">
+          <div className="flex-1 bg-zinc-100 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden">
+            <Textarea
+              ref={textareaRef}
+              tabIndex={0}
+              rows={1}
+              value={input}
+              onChange={handleInput}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  submitForm();
+                }
+              }}
+              placeholder="Ask anything..."
+              spellCheck={false}
+              className="min-h-[48px] w-full resize-none bg-transparent px-4 py-3 focus-within:outline-none text-sm"
+              disabled={status === 'streaming' || status === 'submitted'}
+            />
+          </div>
+
+          <div className="flex gap-2">
+            <PureAttachmentsButton
+              fileInputRef={fileInputRef}
+              status={status}
+            />
+            {(status === 'streaming' || status === 'submitted') ? (
+              <PureStopButton stop={stop} setMessages={setMessages} />
+            ) : (
+              <PureSendButton
+                submitForm={submitForm}
+                input={input}
+                uploadQueue={uploadQueue}
+              />
+            )}
+          </div>
+        </div>
+
+        {uploadQueue.length > 0 && (
+          <div className="flex flex-col gap-2">
+            {uploadQueue.map((fileName) => (
+              <div
+                key={fileName}
+                className="flex items-center gap-2 text-sm text-zinc-500"
+              >
+                <div className="animate-spin">⏳</div>
+                <span>Uploading {fileName}...</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <input
-        type="file"
-        className="fixed -top-4 -left-4 size-0.5 opacity-0 pointer-events-none"
         ref={fileInputRef}
-        multiple
-        onChange={handleFileChange}
+        className="hidden"
         tabIndex={-1}
+        type="file"
+        onChange={handleFileChange}
+        multiple
       />
 
-      {(attachments.length > 0 || uploadQueue.length > 0) && (
-        <div
-          data-testid="attachments-preview"
-          className="flex flex-row gap-2 overflow-x-scroll items-end"
-        >
-          {attachments.map((attachment) => (
-            <PreviewAttachment key={attachment.url} attachment={attachment} />
-          ))}
-
-          {uploadQueue.map((filename) => (
-            <PreviewAttachment
-              key={filename}
-              attachment={{
-                url: '',
-                name: filename,
-                contentType: '',
-              }}
-              isUploading={true}
-            />
-          ))}
-        </div>
-      )}
-
-      <Textarea
-        data-testid="multimodal-input"
-        ref={textareaRef}
-        placeholder="Send a message..."
-        value={input}
-        onChange={handleInput}
-        className={cx(
-          'min-h-[24px] max-h-[calc(75dvh)] overflow-hidden resize-none rounded-2xl !text-base bg-muted pb-10 dark:border-zinc-700',
-          className,
-        )}
-        rows={2}
-        autoFocus
-        onKeyDown={(event) => {
-          if (
-            event.key === 'Enter' &&
-            !event.shiftKey &&
-            !event.nativeEvent.isComposing
-          ) {
-            event.preventDefault();
-
-            if (status !== 'ready') {
-              toast.error('Please wait for the model to finish its response!');
-            } else {
-              submitForm();
-            }
-          }
-        }}
+      <SuggestedActions
+        chatId={chatId}
+        append={append}
+        selectedVisibilityType={selectedVisibilityType}
       />
-
-      <div className="absolute bottom-0 p-2 w-fit flex flex-row justify-start">
-        <AttachmentsButton fileInputRef={fileInputRef} status={status} />
-      </div>
-
-      <div className="absolute bottom-0 right-0 p-2 w-fit flex flex-row justify-end">
-        {status === 'submitted' || status === 'streaming' ? (
-          <StopButton stop={stop} setMessages={setMessages} />
-        ) : (
-          <SendButton
-            input={input}
-            submitForm={submitForm}
-            uploadQueue={uploadQueue}
-          />
-        )}
-      </div>
     </div>
   );
 }

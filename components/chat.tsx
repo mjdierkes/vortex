@@ -20,6 +20,7 @@ import { useSearchParams } from 'next/navigation';
 import { useChatVisibility } from '@/hooks/use-chat-visibility';
 import { useAutoResume } from '@/hooks/use-auto-resume';
 import { ChatSDKError } from '@/lib/errors';
+import { Safari } from '@/components/magicui/safari';
 
 // Helper function (can be moved to utils if used elsewhere)
 function isUrlValid(urlString: string): boolean {
@@ -131,59 +132,74 @@ export function Chat({
 
   return (
     <>
-      <div className="flex flex-col min-w-0 h-dvh bg-background">
-        <ChatHeader
-          chatId={id}
-          selectedModelId={initialChatModel}
-          selectedVisibilityType={initialVisibilityType}
-          isReadonly={isReadonly}
-          session={session}
-        />
-
-        <Messages
-          chatId={id}
-          status={status}
-          votes={votes}
-          messages={messages}
-          setMessages={setMessages}
-          reload={reload}
-          isReadonly={isReadonly}
-          isArtifactVisible={isArtifactVisible}
-        />
-
-        <form className="flex flex-col mx-auto px-4 bg-background pb-4 md:pb-6 gap-2 w-full md:max-w-3xl">
-          {!isReadonly && (
-            <>
-              <div className="flex flex-col gap-1 mb-2">
-                <label htmlFor="mcp-server-url" className="text-xs text-zinc-500">
-                  MCP Server URL (Optional)
-                </label>
+      <div className="flex flex-col min-w-0 h-dvh bg-background p-4 items-center justify-center">
+        <div className="w-full max-w-5xl h-[85vh] flex flex-col rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden">
+          {/* Safari-style browser chrome */}
+          <div className="flex items-center gap-3 px-3 py-1.5 bg-gray-100 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700">
+            <div className="flex gap-1.5">
+              <div className="w-2.5 h-2.5 rounded-full bg-red-500"></div>
+              <div className="w-2.5 h-2.5 rounded-full bg-yellow-500"></div>
+              <div className="w-2.5 h-2.5 rounded-full bg-green-500"></div>
+            </div>
+            
+            {/* Custom MCP URL bar */}
+            <div className="flex-1 mx-auto max-w-xl">
+              <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 rounded-lg p-1 border border-zinc-200 dark:border-zinc-700">
+                <div className="flex-shrink-0">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-zinc-500" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" clipRule="evenodd" />
+                  </svg>
+                </div>
                 <input
                   type="text"
                   id="mcp-server-url"
                   value={mcpServerUrlInput}
                   onChange={(e) => setMcpServerUrlInput(e.target.value)}
-                  placeholder="https://your-mcp-server.com/api/mcp-def"
-                  className="w-full p-2 border border-zinc-300 rounded-md text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 dark:bg-zinc-700 dark:border-zinc-600 dark:text-white"
+                  placeholder="Enter MCP Server URL"
+                  className="flex-1 bg-transparent border-none focus:ring-0 focus:outline-none text-xs text-zinc-800 dark:text-zinc-200 placeholder-zinc-500"
                 />
               </div>
-              <MultimodalInput
+            </div>
+
+            <div className="flex-shrink-0 w-12"></div> {/* Spacer for balance */}
+          </div>
+
+          <div className="flex flex-col flex-1 h-full overflow-hidden">
+            <div className={`flex-1 overflow-auto ${messages.length === 0 ? 'flex items-center justify-center' : ''}`}>
+              <Messages
                 chatId={id}
-                input={input}
-                setInput={setInput}
-                handleSubmit={handleSubmit}
                 status={status}
-                stop={stop}
-                attachments={attachments}
-                setAttachments={setAttachments}
+                votes={votes}
                 messages={messages}
                 setMessages={setMessages}
-                append={append}
-                selectedVisibilityType={visibilityType}
+                reload={reload}
+                isReadonly={isReadonly}
+                isArtifactVisible={isArtifactVisible}
               />
-            </>
-          )}
-        </form>
+            </div>
+
+            <div className="flex justify-center items-center w-full pb-4">
+              <form className={`w-full max-w-2xl px-4 ${messages.length === 0 ? 'mb-4' : ''}`}>
+                {!isReadonly && (
+                  <MultimodalInput
+                    chatId={id}
+                    input={input}
+                    setInput={setInput}
+                    handleSubmit={handleSubmit}
+                    status={status}
+                    stop={stop}
+                    attachments={attachments}
+                    setAttachments={setAttachments}
+                    messages={messages}
+                    setMessages={setMessages}
+                    append={append}
+                    selectedVisibilityType={visibilityType}
+                  />
+                )}
+              </form>
+            </div>
+          </div>
+        </div>
       </div>
 
       <Artifact
