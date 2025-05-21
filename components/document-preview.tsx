@@ -100,18 +100,46 @@ export function DocumentPreview({
   if (!document) return <LoadingSkeleton artifactKind={artifact.kind} />;
 
   return (
-    <div className="relative w-full cursor-pointer">
-      <HitboxLayer
-        hitboxRef={hitboxRef}
-        result={result}
-        setArtifact={setArtifact}
-      />
+    <div className="relative w-full cursor-default" ref={hitboxRef}>
       <DocumentHeader
         title={document.title}
         kind={document.kind}
         isStreaming={artifact.status === 'streaming'}
       />
-      <DocumentContent document={document} />
+      <div className="relative">
+        <DocumentContent document={document} />
+        <div className="absolute top-2 right-2 z-20">
+          <button
+            className="p-2 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-700 bg-background/80 dark:bg-background/50 backdrop-blur-sm"
+            onClick={() => {
+              const boundingBox = hitboxRef.current?.getBoundingClientRect();
+              if (!boundingBox) return;
+              
+              setArtifact((artifact) =>
+                artifact.status === 'streaming'
+                  ? { ...artifact, isVisible: true }
+                  : {
+                      ...artifact,
+                      title: document.title,
+                      documentId: document.id,
+                      kind: document.kind,
+                      isVisible: true,
+                      boundingBox: {
+                        left: boundingBox.x,
+                        top: boundingBox.y,
+                        width: boundingBox.width,
+                        height: boundingBox.height,
+                      },
+                    }
+              );
+            }}
+            title="Open in full view"
+            aria-label="Open in full view"
+          >
+            <FullscreenIcon />
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -237,6 +265,12 @@ const DocumentHeader = memo(PureDocumentHeader, (prevProps, nextProps) => {
 const DocumentContent = ({ document }: { document: Document }) => {
   const { artifact } = useArtifact();
 
+  const isLikelyHtml = (content: string | null): boolean => {
+    if (!content) return false;
+    const trimmedContent = content.trim();
+    return trimmedContent.startsWith('<') && trimmedContent.endsWith('>');
+  };
+
   const containerClassName = cn(
     'h-[257px] overflow-y-scroll border rounded-b-2xl dark:bg-muted border-t-0 dark:border-zinc-700',
     {
@@ -254,32 +288,65 @@ const DocumentContent = ({ document }: { document: Document }) => {
     suggestions: [],
   };
 
-  return (
-    <div className={containerClassName}>
-      {document.kind === 'text' ? (
-        <Editor {...commonProps} onSaveContent={() => {}} />
-      ) : document.kind === 'code' ? (
+  if (document.kind === 'code') {
+    if (isLikelyHtml(document.content)) {
+      return (
+        <div className={cn(containerClassName, 'overflow-hidden p-0')} /* Ensure iframe fits and no padding */>
+          <iframe
+            srcDoc={document.content ?? ''}
+            title={`${document.title} - Web Preview`}
+            sandbox="allow-scripts allow-same-origin" // Stricter sandbox for chat preview initially
+            style={{
+              width: '100%',
+              height: '100%', // Make it fill the container
+              border: 'none',
+            }}
+          />
+        </div>
+      );
+    }
+    // Fallback for non-HTML code (e.g., Python)
+    return (
+      <div className={containerClassName}>
         <div className="flex flex-1 relative w-full">
           <div className="absolute inset-0">
             <CodeEditor {...commonProps} onSaveContent={() => {}} />
           </div>
         </div>
-      ) : document.kind === 'sheet' ? (
-        <div className="flex flex-1 relative size-full p-4">
-          <div className="absolute inset-0">
-            <SpreadsheetEditor {...commonProps} />
-          </div>
+      </div>
+    );
+  }
+
+  if (document.kind === 'text') {
+    return (
+      <div className={containerClassName}>
+        <Editor {...commonProps} onSaveContent={() => {}} />
+      </div>
+    );
+  }
+
+  if (document.kind === 'sheet') {
+    return (
+      <div className="flex flex-1 relative size-full p-4">
+        <div className="absolute inset-0">
+          <SpreadsheetEditor {...commonProps} />
         </div>
-      ) : document.kind === 'image' ? (
-        <ImageEditor
-          title={document.title}
-          content={document.content ?? ''}
-          isCurrentVersion={true}
-          currentVersionIndex={0}
-          status={artifact.status}
-          isInline={true}
-        />
-      ) : null}
-    </div>
-  );
+      </div>
+    );
+  }
+
+  if (document.kind === 'image') {
+    return (
+      <ImageEditor
+        title={document.title}
+        content={document.content ?? ''}
+        isCurrentVersion={true}
+        currentVersionIndex={0}
+        status={artifact.status}
+        isInline={true}
+      />
+    );
+  }
+
+  return null;
 };
