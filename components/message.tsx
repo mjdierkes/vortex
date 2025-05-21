@@ -173,10 +173,9 @@ const PurePreviewMessage = ({
                       ) : toolName === 'createDocument' ? (
                         <DocumentPreview isReadonly={isReadonly} args={args} />
                       ) : toolName === 'updateDocument' ? (
-                        <DocumentToolCall
-                          type="update"
-                          args={args}
+                        <DocumentPreview 
                           isReadonly={isReadonly}
+                          args={args}
                         />
                       ) : toolName === 'requestSuggestions' ? (
                         <DocumentToolCall
@@ -202,10 +201,9 @@ const PurePreviewMessage = ({
                           result={result}
                         />
                       ) : toolName === 'updateDocument' ? (
-                        <DocumentToolResult
-                          type="update"
-                          result={result}
+                        <DocumentPreview
                           isReadonly={isReadonly}
+                          result={result}
                         />
                       ) : toolName === 'requestSuggestions' ? (
                         <DocumentToolResult
